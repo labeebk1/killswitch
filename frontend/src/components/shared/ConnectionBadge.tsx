@@ -11,7 +11,7 @@ const labels: Record<ConnectionStatus, string> = {
   disconnected: 'Disconnected',
 }
 
-const colors: Record<ConnectionStatus, string> = {
+const dotColors: Record<ConnectionStatus, string> = {
   connecting: 'bg-yellow-500',
   connected: 'bg-emerald-500',
   reconnecting: 'bg-orange-500',
@@ -20,8 +20,13 @@ const colors: Record<ConnectionStatus, string> = {
 
 export function ConnectionBadge({ status }: Props) {
   return (
-    <span className="flex items-center gap-1.5 text-xs text-slate-400">
-      <span className={`inline-block w-2 h-2 rounded-full ${colors[status]}`} />
+    <span
+      role="status"
+      aria-live="polite"
+      aria-label={`Connection status: ${labels[status]}`}
+      className="flex items-center gap-1.5 text-xs text-slate-400"
+    >
+      <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-full ${dotColors[status]}`} />
       {labels[status]}
     </span>
   )

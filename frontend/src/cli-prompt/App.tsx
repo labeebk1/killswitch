@@ -62,6 +62,7 @@ export function App() {
   const [wsStatus, setWsStatus] = useState<CliWsStatus>('connecting')
   const [state, dispatch] = useReducer(matchReducer, PLACEHOLDER_MATCH_ID, initialMatchState)
   const [promptText, setPromptText] = useState('')
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const handleEvent = useCallback((event: MatchEventKind) => {
@@ -80,16 +81,23 @@ export function App() {
   const handleSubmit = useCallback(async () => {
     const text = promptText.trim()
     if (!canSubmit || !text) return
+    setSubmitError(null)
     setPromptText('')
     textareaRef.current?.focus()
     try {
-      await fetch('http://localhost:3100/prompt', {
+      const res = await fetch('http://localhost:3100/prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       })
-    } catch {
-      // CLI may respond with an error; the WS stream confirms success
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        setSubmitError(`Submit failed (${res.status})${body ? `: ${body}` : ''}`)
+        setPromptText(text)  // restore so user doesn't lose their prompt
+      }
+    } catch (err) {
+      setSubmitError('Could not reach CLI — is it still running?')
+      setPromptText(text)
     }
   }, [canSubmit, promptText])
 
@@ -150,6 +158,14 @@ export function App() {
           </div>
         ))}
       </div>
+
+      {/* Submit error */}
+      {submitError && (
+        <div role="alert" className="shrink-0 mx-3 mb-1 px-3 py-2 rounded-lg bg-red-900/50 border border-red-700 text-red-300 text-xs flex items-center justify-between gap-2">
+          <span>{submitError}</span>
+          <button onClick={() => setSubmitError(null)} aria-label="Dismiss error" className="text-red-400 hover:text-red-200 shrink-0">✕</button>
+        </div>
+      )}
 
       {/* Prompt input */}
       <div className="shrink-0 border-t border-slate-800 p-3">

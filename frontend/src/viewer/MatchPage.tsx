@@ -10,10 +10,10 @@ import { LiveView } from '../components/viewer/LiveView'
 import { EndedView } from '../components/viewer/EndedView'
 import { MatchTimer } from '../components/shared/MatchTimer'
 import { ConnectionBadge } from '../components/shared/ConnectionBadge'
+import { ErrorBoundary } from '../components/shared/ErrorBoundary'
 import type { ConnectionStatus } from '../hooks/useMatchWebSocket'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'https://api.killswitch.bonecho.ai'
-
 const ALL_SLOTS = [0, 1, 2, 3]
 
 function eventToAction(event: MatchEventKind): MatchAction | null {
@@ -49,11 +49,24 @@ function eventToAction(event: MatchEventKind): MatchAction | null {
   }
 }
 
+// Guard wrapper so hooks are never called conditionally
 export function MatchPage() {
   const { matchId } = useParams<{ matchId: string }>()
+  if (!matchId) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-950 text-red-400">
+        No match ID in URL.
+      </div>
+    )
+  }
+  return (
+    <ErrorBoundary>
+      <MatchPageInner matchId={matchId} />
+    </ErrorBoundary>
+  )
+}
 
-  if (!matchId) return <div className="text-red-400 p-8">No match ID in URL</div>
-
+function MatchPageInner({ matchId }: { matchId: string }) {
   const [state, dispatch] = useReducer(matchReducer, matchId, initialMatchState)
 
   const channels = [
@@ -83,7 +96,6 @@ export function MatchPage() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
-      {/* Top bar */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-3">
           <span className="font-bold tracking-tight text-white">⚡ Killswitch</span>
@@ -97,10 +109,23 @@ export function MatchPage() {
         </div>
       </header>
 
-      {/* Body */}
       {state.matchStatus === 'connecting' && (
         <div className="flex flex-1 items-center justify-center text-slate-400">
           Connecting to match…
+        </div>
+      )}
+
+      {state.matchStatus === 'error' && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-slate-400">
+          <span className="text-3xl">⚡</span>
+          <p className="font-semibold text-white">Couldn't connect to match</p>
+          <p className="text-sm">Connection failed after multiple attempts. Reload to try again.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
+          >
+            Reload
+          </button>
         </div>
       )}
 

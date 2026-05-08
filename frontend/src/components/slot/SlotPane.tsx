@@ -3,6 +3,7 @@ import { slotLabel } from '../../lib/utils'
 import { PromptTranscript } from './PromptTranscript'
 import { PreviewIframe } from './PreviewIframe'
 import { DisconnectOverlay } from './DisconnectOverlay'
+import { ErrorBoundary } from '../shared/ErrorBoundary'
 
 interface Props {
   slot: SlotState
@@ -32,6 +33,7 @@ export function SlotPane({ slot, matchId, size }: Props) {
           {label}
         </span>
         <span
+          aria-hidden="true"
           className={`w-2 h-2 rounded-full shrink-0 ${
             slot.slotDisconnected
               ? 'bg-red-500'
@@ -43,7 +45,6 @@ export function SlotPane({ slot, matchId, size }: Props) {
       </div>
 
       {isCompact ? (
-        // Thumbnail: show only the iframe preview
         <div className="flex-1 overflow-hidden">
           <PreviewIframe
             matchId={matchId}
@@ -53,17 +54,21 @@ export function SlotPane({ slot, matchId, size }: Props) {
           />
         </div>
       ) : (
-        // Full: split view — transcript left, iframe right
-        <div className="flex flex-1 overflow-hidden">
+        // Full: transcript | iframe
+        // Mobile (<640px): stacked vertically — transcript top, iframe bottom
+        // Desktop (≥640px): transcript 38% left, iframe right
+        <div className="flex flex-col sm:flex-row flex-1 overflow-hidden">
           {/* Transcript panel */}
-          <div className="flex flex-col w-[38%] min-w-0 border-r border-slate-800 overflow-hidden">
+          <div className="flex flex-col h-[40%] sm:h-auto sm:w-[38%] min-w-0 border-b sm:border-b-0 sm:border-r border-slate-800 overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-              <PromptTranscript turns={slot.turns} activeTurnId={slot.activeTurnId} />
+              <ErrorBoundary>
+                <PromptTranscript turns={slot.turns} activeTurnId={slot.activeTurnId} />
+              </ErrorBoundary>
             </div>
           </div>
 
           {/* Preview panel */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative min-h-0">
             <PreviewIframe
               matchId={matchId}
               slot={slot.slot}

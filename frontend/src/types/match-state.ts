@@ -109,10 +109,16 @@ function updateTurn(turns: Turn[], turnId: string, update: (t: Turn) => Turn): T
 export function matchReducer(state: MatchState, action: MatchAction): MatchState {
   switch (action.type) {
     case 'WS_STATUS': {
-      const matchStatus =
-        action.status === 'connected' && state.matchStatus === 'connecting'
-          ? 'lobby'
-          : state.matchStatus
+      let matchStatus = state.matchStatus
+      if (action.status === 'connected' && state.matchStatus === 'connecting') {
+        matchStatus = 'lobby'
+      } else if (
+        action.status === 'disconnected' &&
+        (state.matchStatus === 'connecting' || state.matchStatus === 'lobby')
+      ) {
+        // Permanent disconnect before match loaded — surface hard error
+        matchStatus = 'error'
+      }
       return { ...state, connectionStatus: action.status, matchStatus }
     }
 
@@ -277,6 +283,7 @@ export function matchReducer(state: MatchState, action: MatchAction): MatchState
             ...t,
             completed: true,
             stopReason: action.stopReason,
+            activeToolUseIds: new Set<string>(),
           }))
           return { ...s, turns, activeTurnId: undefined }
         }),

@@ -12,10 +12,13 @@ const CLI_WS_URL = 'ws://localhost:3100/ws'
 const PING_INTERVAL_MS = 15_000
 const INITIAL_BACKOFF = 1_000
 const MAX_BACKOFF = 15_000
+const MAX_RETRIES = 10
 
 export function useCliWebSocket({ onEvent, onStatus }: Options) {
   const wsRef = useRef<WebSocket | null>(null)
+  const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const backoffRef = useRef(INITIAL_BACKOFF)
+  const retryCountRef = useRef(0)
   const unmountedRef = useRef(false)
   const onEventRef = useRef(onEvent)
   const onStatusRef = useRef(onStatus)
@@ -30,7 +33,7 @@ export function useCliWebSocket({ onEvent, onStatus }: Options) {
 
   const connect = useCallback(() => {
     if (unmountedRef.current) return
-    onStatusRef.current(backoffRef.current > INITIAL_BACKOFF ? 'reconnecting' : 'connecting')
+    onStatusRef.current(retryCountRef.current > 0 ? 'reconnecting' : 'connecting')
 
     const ws = new WebSocket(CLI_WS_URL)
     wsRef.current = ws
@@ -38,12 +41,14 @@ export function useCliWebSocket({ onEvent, onStatus }: Options) {
     ws.onopen = () => {
       if (unmountedRef.current) { ws.close(); return }
       backoffRef.current = INITIAL_BACKOFF
+      retryCountRef.current = 0
       onStatusRef.current('connected')
-      const ping = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
-        else clearInterval(ping)
+
+      pingTimerRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }))
+        }
       }, PING_INTERVAL_MS)
-      ;(ws as WebSocket & { _ping?: ReturnType<typeof setInterval> })._ping = ping
     }
 
     ws.onmessage = (ev) => {
@@ -54,7 +59,15 @@ export function useCliWebSocket({ onEvent, onStatus }: Options) {
     }
 
     ws.onclose = () => {
+      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
       if (unmountedRef.current) return
+
+      retryCountRef.current += 1
+      if (retryCountRef.current >= MAX_RETRIES) {
+        onStatusRef.current('disconnected')
+        return
+      }
+
       onStatusRef.current('reconnecting')
       setTimeout(() => {
         backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF)
@@ -70,6 +83,7 @@ export function useCliWebSocket({ onEvent, onStatus }: Options) {
     connect()
     return () => {
       unmountedRef.current = true
+      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
       wsRef.current?.close()
     }
   }, [connect])

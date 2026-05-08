@@ -17,7 +17,12 @@ export function MatchTimer({ endsAt }: Props) {
 
   const isLow = remaining < 5 * 60 * 1_000
   return (
-    <span className={`tabular-nums font-mono text-sm ${isLow ? 'text-red-400' : 'text-slate-300'}`}>
+    <span
+      aria-live="polite"
+      aria-label={`Time remaining: ${formatDuration(remaining)}${isLow ? ', low time' : ''}`}
+      className={`flex items-center gap-1 tabular-nums font-mono text-sm ${isLow ? 'text-red-400' : 'text-slate-300'}`}
+    >
+      {isLow && <span aria-hidden="true" className="text-xs font-sans font-semibold">LOW</span>}
       {formatDuration(remaining)}
     </span>
   )

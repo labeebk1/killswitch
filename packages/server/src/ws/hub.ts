@@ -4,6 +4,7 @@ import type { Server } from "http";
 import { ClientEnvelopeSchema } from "@killswitch/shared";
 import type { ServerEnvelope } from "@killswitch/shared";
 import { nanoid } from "nanoid";
+import { checkProtocolVersion } from "../lib/versionHandshake";
 
 export interface SlotState {
   ws: WebSocket | null;
@@ -157,8 +158,16 @@ class WsHub {
         return;
       }
 
-      // cli.connect — no broadcast needed, just acknowledge
+      // cli.connect — enforce protocol version before any match activity
       if (envelope.type === "cli.connect") {
+        const rejection = checkProtocolVersion(envelope.protocolVersion);
+        if (rejection) {
+          process.stderr.write(
+            `[hub] version rejected slot ${slot} match ${matchId}: ${envelope.protocolVersion}\n`
+          );
+          ws.send(JSON.stringify(rejection));
+          ws.close(4001, "version_rejected");
+        }
         return;
       }
 

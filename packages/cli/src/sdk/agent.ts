@@ -1,4 +1,6 @@
 import WebSocket from "ws";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type {
   ResponseTextDeltaEnvelope,
   ResponseToolUseStartedEnvelope,
@@ -6,22 +8,9 @@ import type {
   ResponseTurnCompletedEnvelope,
 } from "@killswitch/shared";
 
-// Dynamic import to handle optional SDK
-async function loadAgentSdk(): Promise<typeof import("@anthropic-ai/claude-agent-sdk")> {
-  try {
-    return await import("@anthropic-ai/claude-agent-sdk");
-  } catch {
-    throw new Error(
-      "Claude Agent SDK not found. Install @anthropic-ai/claude-agent-sdk to use agent features."
-    );
-  }
-}
-
 function sanitizeSummary(toolName: string, output: string): string {
-  // Never include file contents or raw stdout/stderr
-  // Summary format: "<toolName> <sanitized-target> (<brief-outcome>)"
   const trimmed = output.trim().slice(0, 200);
-  // Remove potential file content lines (lines > 100 chars are likely content)
+  // Drop lines that look like raw file content (>100 chars)
   const lines = trimmed
     .split("\n")
     .filter((l) => l.length <= 100)
@@ -30,25 +19,8 @@ function sanitizeSummary(toolName: string, output: string): string {
   return `${toolName}: ${lines || "completed"}`.slice(0, 200);
 }
 
-export async function runAgent(
-  prompt: string,
-  ws: WebSocket,
-  slot: number,
-  turnId: string,
-  workspaceDir: string
-): Promise<void> {
-  const sdk = await loadAgentSdk();
-
-  // ClaudeAgent may have different shapes depending on SDK version; use a safe approach
-  const AgentClass =
-    (sdk as unknown as { ClaudeAgent?: unknown }).ClaudeAgent ??
-    (sdk as unknown as { default?: unknown }).default;
-
-  if (!AgentClass || typeof AgentClass !== "function") {
-    throw new Error("ClaudeAgent not found in SDK");
-  }
-
-  const systemPrompt = `You are a coding assistant running in a Killswitch competitive coding environment.
+const SYSTEM_PROMPT = (workspaceDir: string) =>
+  `You are a coding assistant running in a Killswitch competitive coding environment.
 
 ## Constraints
 - Frontend dev server: :3000 (npm run dev or vite)
@@ -60,49 +32,42 @@ export async function runAgent(
 ## Your task
 Help the user with their coding challenge. Be concise and focused.`;
 
-  const agent = new (AgentClass as new (opts: unknown) => unknown)({
-    systemPrompt,
-    cwd: workspaceDir,
-    model: process.env.CLAUDE_MODEL ?? "claude-opus-4-5",
-  }) as {
-    stream: (
-      prompt: string
-    ) => AsyncIterable<{
-      type: string;
-      delta?: { type?: string; text?: string };
-      tool_use?: { id?: string; name?: string };
-      tool_result?: {
-        tool_use_id?: string;
-        name?: string;
-        content?: string;
-        is_error?: boolean;
-        duration_ms?: number;
+export async function runAgent(
+  prompt: string,
+  ws: WebSocket,
+  slot: number,
+  turnId: string,
+  workspaceDir: string
+): Promise<void> {
+  // Map toolUseId → { toolName, startTime } for tracking completion
+  const toolStartMap = new Map<string, { toolName: string; startTime: number }>();
+
+  const q = query({
+    prompt,
+    options: {
+      cwd: workspaceDir,
+      systemPrompt: SYSTEM_PROMPT(workspaceDir),
+    },
+  });
+
+  for await (const msg of q as AsyncIterable<SDKMessage>) {
+    // stream_event carries raw Anthropic API streaming events — use for real-time deltas
+    if (msg.type === "stream_event") {
+      const event = msg.event as {
+        type: string;
+        index?: number;
+        content_block?: { type: string; id?: string; name?: string };
+        delta?: { type: string; text?: string };
       };
-      stop_reason?: string;
-    }>;
-  };
 
-  const startTimes = new Map<string, number>();
-
-  for await (const event of agent.stream(prompt)) {
-    switch (event.type) {
-      case "assistant_message_delta": {
-        if (event.delta?.type === "text_delta" && event.delta.text) {
-          const envelope: ResponseTextDeltaEnvelope = {
-            type: "response.text_delta",
-            slot,
-            turnId,
-            text: event.delta.text,
-          };
-          ws.send(JSON.stringify(envelope));
-        }
-        break;
-      }
-
-      case "tool_use_start": {
-        const toolUseId = event.tool_use?.id ?? "";
-        const toolName = event.tool_use?.name ?? "";
-        startTimes.set(toolUseId, Date.now());
+      if (
+        event.type === "content_block_start" &&
+        event.content_block?.type === "tool_use" &&
+        event.content_block.id
+      ) {
+        const toolUseId = event.content_block.id;
+        const toolName = event.content_block.name ?? "";
+        toolStartMap.set(toolUseId, { toolName, startTime: Date.now() });
         const envelope: ResponseToolUseStartedEnvelope = {
           type: "response.tool_use_started",
           slot,
@@ -111,44 +76,74 @@ Help the user with their coding challenge. Be concise and focused.`;
           toolName,
         };
         ws.send(JSON.stringify(envelope));
-        break;
       }
 
-      case "tool_use_complete": {
-        const toolUseId = event.tool_result?.tool_use_id ?? "";
-        const toolName = event.tool_result?.name ?? "";
-        const startTime = startTimes.get(toolUseId) ?? Date.now();
-        const durationMs = Date.now() - startTime;
-        startTimes.delete(toolUseId);
-
-        // Sanitize output - no raw content
-        const rawOutput = event.tool_result?.content ?? "";
-        const summary = sanitizeSummary(toolName, rawOutput);
-
-        const envelope: ResponseToolUseCompletedEnvelope = {
-          type: "response.tool_use_completed",
+      if (
+        event.type === "content_block_delta" &&
+        event.delta?.type === "text_delta" &&
+        event.delta.text
+      ) {
+        const envelope: ResponseTextDeltaEnvelope = {
+          type: "response.text_delta",
           slot,
           turnId,
-          toolUseId,
-          toolName,
-          summary,
-          durationMs,
-          ok: !(event.tool_result?.is_error ?? false),
+          text: event.delta.text,
         };
         ws.send(JSON.stringify(envelope));
-        break;
       }
+    }
 
-      case "message_stop": {
-        const envelope: ResponseTurnCompletedEnvelope = {
-          type: "response.turn_completed",
-          slot,
-          turnId,
-          stopReason: event.stop_reason ?? "end_turn",
-        };
-        ws.send(JSON.stringify(envelope));
-        break;
+    // user message with tool_use_result = tool execution completed
+    if (msg.type === "user" && (msg as { tool_use_result?: unknown }).tool_use_result !== undefined) {
+      const msgParam = (msg as { message: { content?: unknown } }).message;
+      const content = msgParam?.content;
+      const blocks = Array.isArray(content) ? content : [];
+      for (const block of blocks as Array<{
+        type?: string;
+        tool_use_id?: string;
+        content?: unknown;
+        is_error?: boolean;
+      }>) {
+        if (block.type === "tool_result" && block.tool_use_id) {
+          const entry = toolStartMap.get(block.tool_use_id);
+          const durationMs = entry ? Date.now() - entry.startTime : 0;
+          toolStartMap.delete(block.tool_use_id);
+
+          const rawContent =
+            typeof block.content === "string"
+              ? block.content
+              : Array.isArray(block.content)
+              ? (block.content as Array<{ type?: string; text?: string }>)
+                  .filter((b) => b.type === "text")
+                  .map((b) => b.text ?? "")
+                  .join("")
+              : "";
+
+          const envelope: ResponseToolUseCompletedEnvelope = {
+            type: "response.tool_use_completed",
+            slot,
+            turnId,
+            toolUseId: block.tool_use_id,
+            toolName: entry?.toolName ?? "",
+            summary: sanitizeSummary(entry?.toolName ?? "tool", rawContent),
+            durationMs,
+            ok: !block.is_error,
+          };
+          ws.send(JSON.stringify(envelope));
+        }
       }
+    }
+
+    // result = turn complete
+    if (msg.type === "result") {
+      const result = msg as { stop_reason?: string | null };
+      const envelope: ResponseTurnCompletedEnvelope = {
+        type: "response.turn_completed",
+        slot,
+        turnId,
+        stopReason: result.stop_reason ?? "end_turn",
+      };
+      ws.send(JSON.stringify(envelope));
     }
   }
 }

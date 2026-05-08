@@ -1,0 +1,107 @@
+# Killswitch CLI npm publish pipeline.
+#
+# Triggered by version tags (v*.*.*).
+# Bundles packages/cli with esbuild (inlines @killswitch/shared so the
+# published package doesn't depend on a private workspace package),
+# then publishes `killswitch` to npm with provenance attestations.
+#
+# Required repository secrets:
+#   NPM_TOKEN — npm automation token with publish access to `killswitch`
+
+name: Publish CLI to npm
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+  id-token: write   # required for npm provenance attestation
+
+jobs:
+  publish:
+    name: npm publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm -r build
+
+      - name: Verify package.json version matches tag
+        run: |
+          TAG_VERSION="${{ github.ref_name }}"
+          PKG_VERSION="v$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: tag $TAG_VERSION does not match packages/cli/package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Bundle CLI for publish (inline workspace deps)
+        run: |
+          set -euo pipefail
+          # Bundle packages/cli into a single self-contained dist file so the
+          # published package doesn't carry a `@killswitch/shared` runtime dep
+          # (the shared package is not published to npm).
+          npx --yes esbuild@0.21 packages/cli/src/index.ts \
+            --bundle \
+            --platform=node \
+            --target=node22 \
+            --format=cjs \
+            --external:@anthropic-ai/claude-agent-sdk \
+            --external:nanoid \
+            --external:ws \
+            --external:zod \
+            --outfile=packages/cli/dist/index.js \
+            --banner:js='#!/usr/bin/env node'
+          chmod +x packages/cli/dist/index.js
+
+      - name: Stage publishable package
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)"
+          cp -r packages/cli/dist "$STAGE/dist"
+          # Rewrite package.json: drop @killswitch/shared (now bundled),
+          # set "files" so only dist + LICENSE ship.
+          node -e '
+            const pkg = require("./packages/cli/package.json");
+            delete pkg.dependencies["@killswitch/shared"];
+            delete pkg.devDependencies;
+            delete pkg.scripts;
+            pkg.files = ["dist", "LICENSE", "README.md"];
+            pkg.engines = { node: ">=20" };
+            require("fs").writeFileSync(
+              process.argv[1] + "/package.json",
+              JSON.stringify(pkg, null, 2) + "\n"
+            );
+          ' "$STAGE"
+          # Carry README + LICENSE if they exist next to the package.
+          [ -f packages/cli/README.md ] && cp packages/cli/README.md "$STAGE/" || true
+          [ -f LICENSE ] && cp LICENSE "$STAGE/" || true
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+          echo "--- staged package.json ---"
+          cat "$STAGE/package.json"
+
+      - name: Publish to npm (with provenance)
+        run: npm publish --provenance --access public
+        working-directory: ${{ env.STAGE }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

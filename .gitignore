@@ -1,7 +1,10 @@
 node_modules/
 dist/
+dist-cli-prompt/
 *.db
 *.db-wal
 *.db-shm
+*.local
 .env
 .env.local
+.DS_Store

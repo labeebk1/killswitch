@@ -9,7 +9,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.0.12",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.0",
     "@killswitch/shared": "workspace:*",
     "nanoid": "^5.0.0",
     "ws": "^8.16.0",

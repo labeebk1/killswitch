@@ -1,0 +1,9 @@
+{
+  "name": "killswitch",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev:server": "pnpm --filter server dev",
+    "dev:cli": "pnpm --filter cli dev"
+  }
+}

@@ -4,6 +4,7 @@ import { Router as createRouter } from "express";
 import WebSocket from "ws";
 import { nanoid } from "nanoid";
 import { hub } from "../ws/hub";
+import { rewriteTunnelHeaders } from "@killswitch/shared";
 import type {
   TunnelResponseEnvelope,
   TunnelWSFrameEnvelope,
@@ -50,38 +51,6 @@ class LRUCache {
 }
 
 const cache = new LRUCache();
-
-// ─── Header rewriting ────────────────────────────────────────────────────────
-
-function rewriteResponseHeaders(headers: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(headers)) {
-    const lower = k.toLowerCase();
-    if (lower === "x-frame-options") continue;
-    if (lower === "content-security-policy") {
-      out[k] = v
-        .replace(/frame-ancestors[^;]*(;|$)/gi, "frame-ancestors 'none'$1")
-        .trim();
-      continue;
-    }
-    if (lower === "set-cookie") {
-      // Append SameSite=None; Secure if not already present
-      const rewritten = v
-        .split(/,(?=[^;]+=[^;])/)
-        .map((cookie) => {
-          let c = cookie;
-          if (!/samesite/i.test(c)) c += "; SameSite=None";
-          if (!/\bSecure\b/i.test(c)) c += "; Secure";
-          return c;
-        })
-        .join(", ");
-      out[k] = rewritten;
-      continue;
-    }
-    out[k] = v;
-  }
-  return out;
-}
 
 // ─── Proxy router ─────────────────────────────────────────────────────────────
 
@@ -171,7 +140,7 @@ export function createProxyRouter(): Router {
           hub.off(evtKey, onResponse);
 
           const envelope = data as TunnelResponseEnvelope;
-          const rewritten = rewriteResponseHeaders(envelope.headers);
+          const rewritten = rewriteTunnelHeaders(envelope.headers);
 
           for (const [k, v] of Object.entries(rewritten)) {
             res.setHeader(k, v);

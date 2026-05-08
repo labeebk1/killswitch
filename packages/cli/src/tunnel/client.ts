@@ -1,5 +1,6 @@
 import http from "http";
 import WebSocket from "ws";
+import { rewriteTunnelHeaders } from "@killswitch/shared";
 import type {
   TunnelRequestEnvelope,
   TunnelResponseEnvelope,
@@ -10,35 +11,6 @@ import type {
 
 const LOCAL_PORT = parseInt(process.env.LOCAL_PORT ?? "3000", 10);
 const LOCAL_HOST = process.env.LOCAL_HOST ?? "127.0.0.1";
-
-function rewriteLocalHeaders(headers: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(headers)) {
-    const lower = k.toLowerCase();
-    if (lower === "x-frame-options") continue;
-    if (lower === "content-security-policy") {
-      out[k] = v
-        .replace(/frame-ancestors[^;]*(;|$)/gi, "frame-ancestors 'none'$1")
-        .trim();
-      continue;
-    }
-    if (lower === "set-cookie") {
-      const rewritten = v
-        .split(/,(?=[^;]+=[^;])/)
-        .map((cookie) => {
-          let c = cookie;
-          if (!/samesite/i.test(c)) c += "; SameSite=None";
-          if (!/\bSecure\b/i.test(c)) c += "; Secure";
-          return c;
-        })
-        .join(", ");
-      out[k] = rewritten;
-      continue;
-    }
-    out[k] = v;
-  }
-  return out;
-}
 
 export async function handleTunnelRequest(
   envelope: TunnelRequestEnvelope,
@@ -67,7 +39,7 @@ export async function handleTunnelRequest(
         for (let i = 0; i < res.rawHeaders.length; i += 2) {
           rawHeaders[res.rawHeaders[i]] = res.rawHeaders[i + 1];
         }
-        const rewritten = rewriteLocalHeaders(rawHeaders);
+        const rewritten = rewriteTunnelHeaders(rawHeaders);
         send({
           type: "tunnel.response",
           requestId: envelope.requestId,

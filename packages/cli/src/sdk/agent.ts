@@ -50,6 +50,7 @@ export async function runAgent(
     },
   });
 
+  try {
   for await (const msg of q as AsyncIterable<SDKMessage>) {
     // stream_event carries raw Anthropic API streaming events — use for real-time deltas
     if (msg.type === "stream_event") {
@@ -145,5 +146,15 @@ export async function runAgent(
       };
       ws.send(JSON.stringify(envelope));
     }
+  }
+  } catch (err) {
+    process.stderr.write(`[agent] query error: ${String(err)}\n`);
+    const envelope: ResponseTurnCompletedEnvelope = {
+      type: "response.turn_completed",
+      slot,
+      turnId,
+      stopReason: "error",
+    };
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(envelope));
   }
 }

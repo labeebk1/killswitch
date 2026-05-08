@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (never commit terraform.tfvars)
+
+aws_region    = "us-east-1"
+zone_name     = "killswitch.bonecho.ai"
+
+# VPC + subnets — use existing VPC or create a new one
+vpc_id        = "vpc-XXXXXX"
+subnet_ids    = ["subnet-XXXXXX", "subnet-YYYYYY"]
+
+# EC2
+# c6gn.2xlarge: 25 Gbps ENA, 8 vCPU, 16 GB — recommended for ~0.5 Gbps sustained
+# Fallback: c6in.2xlarge (Intel, same NIC tier) if arm64 CI is inconvenient
+instance_type = "c6gn.2xlarge"
+
+# Ubuntu 24.04 LTS arm64 AMI in us-east-1 — update when a new LTS ships
+ami_id        = "ami-XXXXXXXXXXXXXXXXX"
+
+# SSH key for break-glass access; set to "" to disable SSH ingress
+key_name      = ""

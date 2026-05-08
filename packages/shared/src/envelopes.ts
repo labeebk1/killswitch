@@ -78,6 +78,15 @@ export const KickEnvelopeSchema = z.object({
   reason: z.string(),
 });
 
+// ─── Version rejected frame (server → CLI) ───────────────────────────────────
+
+export const VersionRejectedEnvelopeSchema = z.object({
+  type: z.literal("version_rejected"),
+  clientVersion: z.string(),
+  acceptedRange: z.string(),
+  message: z.string(),
+});
+
 // ─── CLI → server inbound envelopes ─────────────────────────────────────────
 
 export const PromptSubmittedEnvelopeSchema = z.object({
@@ -209,6 +218,7 @@ export const ServerEnvelopeSchema = z.discriminatedUnion("type", [
   TunnelDisconnectedEnvelopeSchema,
   TunnelUpstreamErrorEnvelopeSchema,
   KickEnvelopeSchema,
+  VersionRejectedEnvelopeSchema,
   // Server also relays these from CLI to viewers:
   PromptSubmittedEnvelopeSchema,
   ResponseTextDeltaEnvelopeSchema,
@@ -234,6 +244,7 @@ export type TunnelConnectedEnvelope = z.infer<typeof TunnelConnectedEnvelopeSche
 export type TunnelDisconnectedEnvelope = z.infer<typeof TunnelDisconnectedEnvelopeSchema>;
 export type TunnelUpstreamErrorEnvelope = z.infer<typeof TunnelUpstreamErrorEnvelopeSchema>;
 export type KickEnvelope = z.infer<typeof KickEnvelopeSchema>;
+export type VersionRejectedEnvelope = z.infer<typeof VersionRejectedEnvelopeSchema>;
 export type PromptSubmittedEnvelope = z.infer<typeof PromptSubmittedEnvelopeSchema>;
 export type ResponseTextDeltaEnvelope = z.infer<typeof ResponseTextDeltaEnvelopeSchema>;
 export type ResponseToolUseStartedEnvelope = z.infer<typeof ResponseToolUseStartedEnvelopeSchema>;

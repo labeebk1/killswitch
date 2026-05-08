@@ -83,7 +83,7 @@ export function App() {
     setPromptText('')
     textareaRef.current?.focus()
     try {
-      await fetch('http://localhost:3100/api/prompt', {
+      await fetch('http://localhost:3100/prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),

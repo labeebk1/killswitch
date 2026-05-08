@@ -1,0 +1,34 @@
+{
+  "name": "killswitch",
+  "version": "0.1.0",
+  "description": "Competitive AI hackathon platform CLI",
+  "bin": {
+    "killswitch": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev": "tsx src/server/index.ts"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "dependencies": {
+    "semver": "^7.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0",
+    "@types/semver": "^7.5.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

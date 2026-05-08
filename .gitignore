@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+infrastructure/terraform/environments/prod/terraform.tfvars
+infrastructure/terraform/environments/prod/.terraform/
+infrastructure/terraform/environments/prod/*.tfstate
+infrastructure/terraform/environments/prod/*.tfstate.backup
+infrastructure/terraform/environments/prod/.terraform.lock.hcl
